@@ -62,23 +62,28 @@ internal object ImsNetworkState {
         }
     }
 
-    fun cachePcscf(tag: String, address: InetAddress) {
-        val ip = address.hostAddress ?: return
+    fun cachePcscf(addresses: List<InetAddress>) {
+        val ips = addresses
+            .mapNotNull { it.hostAddress?.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
+        if (ips.isEmpty()) return
+
+        val content = ips.joinToString(" ")
         try {
             val file = File(CACHE_FILE_PATH)
             val current = if (file.exists()) file.readText().trim() else ""
-            if (current != ip) {
-                Rlog.i(tag, "Caching discovered P-CSCF ($ip) to $CACHE_FILE_PATH")
+            if (current != content) {
                 file.parentFile?.mkdirs()
-                file.writeText(ip)
+                file.writeText(content)
             }
         } catch (t: Throwable) {
-            Rlog.w(tag, "Failed to cache P-CSCF to $CACHE_FILE_PATH", t)
         }
     }
 
-    private fun readCachedOrFallbackPcscf(ipVersionPolicy: SipIpVersionPolicy): InetAddress? {
-        val manual = SystemProperties.get(PROP_PCSCF_FALLBACK, "")
+    private fun readFallbackPcscf(ipVersionPolicy: SipIpVersionPolicy): InetAddress? {
+        return SystemProperties.get(PROP_PCSCF_FALLBACK, "")
             .trim()
             .takeIf { it.isNotEmpty() }
             ?.let { hostOrIp ->
@@ -88,19 +93,6 @@ internal object ImsNetworkState {
                     null
                 }
             }
-        if (manual != null) return manual
-
-        return try {
-            val file = File(CACHE_FILE_PATH)
-            if (file.exists()) {
-                val ip = file.readText().trim()
-                if (ip.isNotEmpty()) {
-                    InetAddress.getAllByName(ip).firstOrNull(ipVersionPolicy::accepts)
-                } else null
-            } else null
-        } catch (_: Throwable) {
-            null
-        }
     }
 
     fun getPcscfServers(
@@ -114,13 +106,13 @@ internal object ImsNetworkState {
         val netPcscfs = matching.ifEmpty { addresses }
 
         if (netPcscfs.isNotEmpty()) {
-            cachePcscf("ImsNetworkState", netPcscfs[0])
+            cachePcscf(netPcscfs)
             return netPcscfs
         }
 
-        val cached = readCachedOrFallbackPcscf(ipVersionPolicy)
-        return if (cached != null) {
-            listOf(cached)
+        val manualFallback = readFallbackPcscf(ipVersionPolicy)
+        return if (manualFallback != null) {
+            listOf(manualFallback)
         } else {
             emptyList()
         }
@@ -171,10 +163,10 @@ internal object ImsNetworkState {
             }
 
             if (dnsFallback != null) {
-                Rlog.w(tag, "No P-CSCF from network or cache, using 3GPP DNS: $dnsFallback")
+                Rlog.w(tag, "No P-CSCF from network, using 3GPP DNS: $dnsFallback")
                 dnsFallback
             } else {
-                Rlog.w(tag, "No P-CSCF from network, cache or DNS, waiting for onLinkPropertiesChanged")
+                Rlog.w(tag, "No P-CSCF from network or DNS, waiting for onLinkPropertiesChanged")
                 return ImsNetworkEndpointResolution.WaitingForPcscf
             }
         }
