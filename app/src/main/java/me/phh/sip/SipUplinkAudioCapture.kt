@@ -2,6 +2,7 @@
 package me.phh.sip
 
 import android.content.Context
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaCodec
 import android.telephony.Rlog
@@ -54,11 +55,7 @@ object SipUplinkAudioCaptureStarter {
         }
         Rlog.d(logTag, "AudioRecord created with minBufferSize=$minBufferSize, state=${audioRecord.state}")
 
-        val audioManager = SipAudioRecordRouting.pinBuiltinMic(
-            logTag = logTag,
-            context = context,
-            audioRecord = audioRecord,
-        )
+        val audioManager = context.getSystemService(AudioManager::class.java)
 
         val previousAudioMode = SipAudioRecordStarter.startForImsUplink(
             logTag = logTag,
